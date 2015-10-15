@@ -625,6 +625,9 @@ soft_reset_exit:
 #if MICROPY_HW_ENABLE_CAN
     can_deinit();
 #endif
+#if MICROPY_HW_HAS_SDCARD
+    sdcard_power_off();
+#endif
 
     first_soft_reset = false;
     goto soft_reset;
