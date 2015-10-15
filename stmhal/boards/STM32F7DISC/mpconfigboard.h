@@ -4,7 +4,7 @@
 #define MICROPY_HW_MCU_NAME         "STM32F746"
 
 #define MICROPY_HW_HAS_SWITCH       (1)
-#define MICROPY_HW_HAS_SDCARD       (0)
+#define MICROPY_HW_HAS_SDCARD       (1)
 #define MICROPY_HW_HAS_MMA7660      (0)
 #define MICROPY_HW_HAS_LIS3DSH      (0)
 #define MICROPY_HW_HAS_LCD          (0)
@@ -85,3 +85,8 @@ void STM32F7DISC_board_early_init(void);
 
 /*#define MICROPY_HW_USB_VBUS_DETECT_PIN (pin_J12)*/
 #define MICROPY_HW_USB_OTG_ID_PIN      (pin_A10)
+
+// SD card detect switch
+#define MICROPY_HW_SDCARD_DETECT_PIN        (pin_C13)
+#define MICROPY_HW_SDCARD_DETECT_PULL       (GPIO_PULLUP)
+#define MICROPY_HW_SDCARD_DETECT_PRESENT    (GPIO_PIN_RESET)
