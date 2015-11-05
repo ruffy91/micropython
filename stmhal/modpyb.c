@@ -211,7 +211,7 @@ STATIC const mp_map_elem_t pyb_module_globals_table[] = {
     { MP_OBJ_NEW_QSTR(MP_QSTR_Accel), (mp_obj_t)&pyb_accel_type },
 #endif
 
-#if MICROPY_HW_HAS_LCD
+#if MICROPY_HW_HAS_LCD || MICROPY_HW_HAS_TFT
     { MP_OBJ_NEW_QSTR(MP_QSTR_LCD), (mp_obj_t)&pyb_lcd_type },
 #endif
 };
