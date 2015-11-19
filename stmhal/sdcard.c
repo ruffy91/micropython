@@ -37,154 +37,32 @@
 
 #if MICROPY_HW_HAS_SDCARD
 
-#if MCU_SERIES == f7
+#if defined(MCU_SERIES_F7)
 
-static SD_HandleTypeDef sd_handle;
+// The F7 series calls the peripheral SDMMC rather than SDIO, so provide some
+// #defines for backwards compatability.
 
-void sdcard_init(void) {
-    GPIO_InitTypeDef GPIO_Init_Structure;
+#define SDIO    SDMMC1
 
-    // invalidate the sd_handle
-    sd_handle.Instance = NULL;
+#define SDIO_CLOCK_EDGE_RISING              SDMMC_CLOCK_EDGE_RISING
+#define SDIO_CLOCK_EDGE_FALLING             SDMMC_CLOCK_EDGE_FALLING
 
-    // configure SD GPIO
-    // we do this here an not in HAL_SD_MspInit because it apparently
-    // makes it more robust to have the pins always pulled high
-    GPIO_Init_Structure.Mode = GPIO_MODE_AF_PP;
-    GPIO_Init_Structure.Pull = GPIO_PULLUP;
-    GPIO_Init_Structure.Speed = GPIO_SPEED_HIGH;
-    GPIO_Init_Structure.Alternate = GPIO_AF12_SDMMC1;
-    GPIO_Init_Structure.Pin = GPIO_PIN_8 | GPIO_PIN_9 | GPIO_PIN_10 | GPIO_PIN_11 | GPIO_PIN_12;
-    HAL_GPIO_Init(GPIOC, &GPIO_Init_Structure);
-    GPIO_Init_Structure.Pin = GPIO_PIN_2;
-    HAL_GPIO_Init(GPIOD, &GPIO_Init_Structure);
+#define SDIO_CLOCK_BYPASS_DISABLE           SDMMC_CLOCK_BYPASS_DISABLE
+#define SDIO_CLOCK_BYPASS_ENABLE            SDMMC_CLOCK_BYPASS_ENABLE
 
-    // configure the SD card detect pin
-    // we do this here so we can detect if the SD card is inserted before powering it on
-    GPIO_Init_Structure.Mode = GPIO_MODE_INPUT;
-    GPIO_Init_Structure.Pull = MICROPY_HW_SDCARD_DETECT_PULL;
-    GPIO_Init_Structure.Speed = GPIO_SPEED_HIGH;
-    GPIO_Init_Structure.Pin = MICROPY_HW_SDCARD_DETECT_PIN.pin_mask;
-    HAL_GPIO_Init(MICROPY_HW_SDCARD_DETECT_PIN.gpio, &GPIO_Init_Structure);
-}
+#define SDIO_CLOCK_POWER_SAVE_DISABLE       SDMMC_CLOCK_POWER_SAVE_DISABLE
+#define SDIO_CLOCK_POWER_SAVE_ENABLE        SDMMC_CLOCK_POWER_SAVE_ENABLE
 
-void HAL_SD_MspInit(SD_HandleTypeDef *hsd) {
-    // enable SDIO clock
-    __SDIO_CLK_ENABLE();
+#define SDIO_BUS_WIDE_1B                    SDMMC_BUS_WIDE_1B
+#define SDIO_BUS_WIDE_4B                    SDMMC_BUS_WIDE_4B
+#define SDIO_BUS_WIDE_8B                    SDMMC_BUS_WIDE_8B
 
-    // GPIO have already been initialised by sdcard_init
+#define SDIO_HARDWARE_FLOW_CONTROL_DISABLE  SDMMC_HARDWARE_FLOW_CONTROL_DISABLE
+#define SDIO_HARDWARE_FLOW_CONTROL_ENABLE   SDMMC_HARDWARE_FLOW_CONTROL_ENABLE
 
-    // interrupts are not used at the moment
-    // they are needed only for DMA transfer (I think...)
-}
+#define SDIO_TRANSFER_CLK_DIV               SDMMC_TRANSFER_CLK_DIV
 
-void HAL_SD_MspDeInit(SD_HandleTypeDef *hsd) {
-    __SDIO_CLK_DISABLE();
-}
-
-bool sdcard_is_present(void) {
-    return HAL_GPIO_ReadPin(MICROPY_HW_SDCARD_DETECT_PIN.gpio, MICROPY_HW_SDCARD_DETECT_PIN.pin_mask) == MICROPY_HW_SDCARD_DETECT_PRESENT;
-}
-
-bool sdcard_power_on(void) {
-    if (!sdcard_is_present()) {
-        return false;
-    }
-    if (sd_handle.Instance) {
-        return true;
-    }
-
-    // SD device interface configuration
-    sd_handle.Instance = SDMMC1;
-    sd_handle.Init.ClockEdge           = SDMMC_CLOCK_EDGE_RISING;
-    sd_handle.Init.ClockBypass         = SDMMC_CLOCK_BYPASS_DISABLE;
-    sd_handle.Init.ClockPowerSave      = SDMMC_CLOCK_POWER_SAVE_DISABLE;
-    sd_handle.Init.BusWide             = SDMMC_BUS_WIDE_1B;
-    sd_handle.Init.HardwareFlowControl = SDMMC_HARDWARE_FLOW_CONTROL_DISABLE;
-    sd_handle.Init.ClockDiv            = SDMMC_TRANSFER_CLK_DIV;
-
-    // init the SD interface, with retry if it's not ready yet
-    HAL_SD_CardInfoTypedef cardinfo;
-    for (int retry = 10; HAL_SD_Init(&sd_handle, &cardinfo) != SD_OK; retry--) {
-        if (retry == 0) {
-            goto error;
-        }
-        HAL_Delay(50);
-    }
-
-    // configure the SD bus width for wide operation
-    if (HAL_SD_WideBusOperation_Config(&sd_handle, SDMMC_BUS_WIDE_4B) != SD_OK) {
-        HAL_SD_DeInit(&sd_handle);
-        goto error;
-    }
-
-    return true;
-
-error:
-    sd_handle.Instance = NULL;
-    return false;
-}
-
-void sdcard_power_off(void) {
-    if (!sd_handle.Instance) {
-        return;
-    }
-    HAL_SD_DeInit(&sd_handle);
-    sd_handle.Instance = NULL;
-}
-
-uint64_t sdcard_get_capacity_in_bytes(void) {
-    if (sd_handle.Instance == NULL) {
-        return 0;
-    }
-    HAL_SD_CardInfoTypedef cardinfo;
-    HAL_SD_Get_CardInfo(&sd_handle, &cardinfo);
-    return cardinfo.CardCapacity;
-}
-
-mp_uint_t sdcard_read_blocks(uint8_t *dest, uint32_t block_num, uint32_t num_blocks) {
-    // check that dest pointer is aligned on a 4-byte boundary
-    if (((uint32_t)dest & 3) != 0) {
-        return SD_ERROR;
-    }
-
-    // check that SD card is initialised
-    if (sd_handle.Instance == NULL) {
-        return SD_ERROR;
-    }
-
-    // We must disable IRQs because the SDIO peripheral has a small FIFO
-    // buffer and we can't let it fill up in the middle of a read.
-    // This will not be needed when SD uses DMA for transfer.
-    mp_uint_t atomic_state = MICROPY_BEGIN_ATOMIC_SECTION();
-    HAL_SD_ErrorTypedef err = HAL_SD_ReadBlocks_BlockNumber(&sd_handle, (uint32_t*)dest, block_num, SDCARD_BLOCK_SIZE, num_blocks);
-    MICROPY_END_ATOMIC_SECTION(atomic_state);
-
-    return err;
-}
-
-mp_uint_t sdcard_write_blocks(const uint8_t *src, uint32_t block_num, uint32_t num_blocks) {
-    // check that src pointer is aligned on a 4-byte boundary
-    if (((uint32_t)src & 3) != 0) {
-        return SD_ERROR;
-    }
-
-    // check that SD card is initialised
-    if (sd_handle.Instance == NULL) {
-        return SD_ERROR;
-    }
-
-    // We must disable IRQs because the SDIO peripheral has a small FIFO
-    // buffer and we can't let it drain to empty in the middle of a write.
-    // This will not be needed when SD uses DMA for transfer.
-    mp_uint_t atomic_state = MICROPY_BEGIN_ATOMIC_SECTION();
-    HAL_SD_ErrorTypedef err = HAL_SD_WriteBlocks_BlockNumber(&sd_handle, (uint32_t*)src, block_num, SDCARD_BLOCK_SIZE, num_blocks);
-    MICROPY_END_ATOMIC_SECTION(atomic_state);
-
-    return err;
-}
-
-#else
+#endif
 
 static SD_HandleTypeDef sd_handle;
 

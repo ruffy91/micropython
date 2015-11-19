@@ -94,9 +94,35 @@ Browse available modules on
 Standard library modules come from
 [micropython-lib](https://github.com/micropython/micropython-lib) project.
 
-(*) Debian/Ubuntu/Mint derivative Linux distros will require build-essentials,
-libffi-dev and pkg-config packages installed. If you have problems with some
-dependencies, they can be disabled in unix/mpconfigport.mk .
+External dependencies
+---------------------
+
+Building Unix version requires some dependencies installed. For
+Debian/Ubuntu/Mint derivative Linux distros, install `build-essential`
+(includes toolchain and make), `libffi-dev`, and `pkg-config` packages.
+
+Other dependencies can be built together with MicroPython. Oftentimes,
+you need to do this to enable extra features or capabilities. To build
+these additional dependencies, first fetch git submodules for them:
+
+    $ git submodule update --init
+
+Use this same command to get the latest versions of dependencies, as
+they are updated from time to time. After that, in `unix/` dir, execute:
+
+    $ make deplibs
+
+This will build all available dependencies (regardless whether they
+are used or not). If you intend to build MicroPython with additional
+options (like cross-compiling), the same set of options should be passed
+to `make deplibs`. To actually enabled use of dependencies, edit
+`unix/mpconfigport.mk` file, which has inline descriptions of the options.
+For example, to build SSL module (required for `upip` tool described above),
+set `MICROPY_PY_USSL` to 1.
+
+In `unix/mpconfigport.mk`, you can also disable some dependencies enabled
+by default, like FFI support, which requires libffi development files to
+be installed.
 
 The STM version
 ---------------
@@ -125,19 +151,3 @@ correct permissions.  Try then:
 
     $ sudo dfu-util -a 0 -d 0483:df11 -D build-PYBV10/firmware.dfu
 
-Building the documentation locally
-----------------------------------
-
-Install Sphinx, and optionally (for the RTD-styling), sphinx_rtd_theme,
-preferably in a virtualenv:
-
-     pip install sphinx
-     pip install sphinx_rtd_theme
-
-In `micropython/docs`, build the docs:
-
-    make MICROPY_PORT=<port_name> BUILDDIR=<port_name>/build html
-
-Where `<port_name>` can be `unix`, `pyboard`, `wipy` or `esp8266`.
-
-You'll find the index page at `micropython/docs/<port_name>/build/html/index.html`.

@@ -30,6 +30,7 @@
 
 #include "py/runtime.h"
 #include "rtc.h"
+#include "irq.h"
 
 /// \moduleref pyb
 /// \class RTC - real time clock
@@ -159,6 +160,12 @@ void rtc_init(void) {
 
 STATIC void RTC_CalendarConfig(void);
 
+#if defined(MICROPY_HW_RTC_USE_LSE) && MICROPY_HW_RTC_USE_LSE
+STATIC bool rtc_use_lse = true;
+#else
+STATIC bool rtc_use_lse = false;
+#endif
+
 void rtc_init(void) {
     RTCHandle.Instance = RTC;
 
@@ -177,34 +184,62 @@ void rtc_init(void) {
     RTCHandle.Init.OutPutPolarity = RTC_OUTPUT_POLARITY_HIGH;
     RTCHandle.Init.OutPutType = RTC_OUTPUT_TYPE_OPENDRAIN;
 
+    if ((RCC->BDCR & (RCC_BDCR_LSEON | RCC_BDCR_LSERDY)) == (RCC_BDCR_LSEON | RCC_BDCR_LSERDY)) {
+        // LSE is enabled & ready --> no need to (re-)init RTC
+        // remove Backup Domain write protection
+        HAL_PWR_EnableBkUpAccess();
+        // Clear source Reset Flag
+        __HAL_RCC_CLEAR_RESET_FLAGS();
+        // provide some status information
+        rtc_info |= 0x40000 | (RCC->BDCR & 7) | (RCC->CSR & 3) << 8;
+        return;
+    } else if ((RCC->BDCR & RCC_BDCR_RTCSEL) == RCC_BDCR_RTCSEL_1) {
+        // LSI is already active
+        // remove Backup Domain write protection
+        HAL_PWR_EnableBkUpAccess();
+        // Clear source Reset Flag
+        __HAL_RCC_CLEAR_RESET_FLAGS();
+        RCC->CSR |= 1;
+        // provide some status information
+        rtc_info |= 0x80000 | (RCC->BDCR & 7) | (RCC->CSR & 3) << 8;
+        return;
+    }
+
     mp_uint_t tick = HAL_GetTick();
 
     if (HAL_RTC_Init(&RTCHandle) != HAL_OK) {
-        // init error
-        rtc_info = 0xffff; // indicate error
-        return;
+        if (rtc_use_lse) {
+            // fall back to LSI...
+            rtc_use_lse = false;
+            HAL_PWR_EnableBkUpAccess();
+            RTCHandle.State = HAL_RTC_STATE_RESET;
+            if (HAL_RTC_Init(&RTCHandle) != HAL_OK) {
+                rtc_info = 0x0100ffff; // indicate error
+                return;
+            }
+        } else {
+            // init error
+            rtc_info = 0xffff; // indicate error
+            return;
+        }
     }
 
     // record how long it took for the RTC to start up
     rtc_info = HAL_GetTick() - tick;
 
-    // check data stored in BackUp register0
-    if (HAL_RTCEx_BKUPRead(&RTCHandle, RTC_BKP_DR0) != 0x32f2) {
-        // fresh reset; configure RTC Calendar
-        RTC_CalendarConfig();
-    } else {
-        // RTC was previously set, so leave it alone
-        if(__HAL_RCC_GET_FLAG(RCC_FLAG_PORRST) != RESET) {
-            // power on reset occurred
-            rtc_info |= 0x10000;
-        }
-        if(__HAL_RCC_GET_FLAG(RCC_FLAG_PINRST) != RESET) {
-            // external reset occurred
-            rtc_info |= 0x20000;
-        }
-        // Clear source Reset Flag
-        __HAL_RCC_CLEAR_RESET_FLAGS();
+    // fresh reset; configure RTC Calendar
+    RTC_CalendarConfig();
+
+    if(__HAL_RCC_GET_FLAG(RCC_FLAG_PORRST) != RESET) {
+        // power on reset occurred
+        rtc_info |= 0x10000;
     }
+    if(__HAL_RCC_GET_FLAG(RCC_FLAG_PINRST) != RESET) {
+        // external reset occurred
+        rtc_info |= 0x20000;
+    }
+    // Clear source Reset Flag
+    __HAL_RCC_CLEAR_RESET_FLAGS();
 }
 
 STATIC void RTC_CalendarConfig(void) {
@@ -233,9 +268,6 @@ STATIC void RTC_CalendarConfig(void) {
         // init error
         return;
     }
-
-    // write data to indicate the RTC has been set
-    HAL_RTCEx_BKUPWrite(&RTCHandle, RTC_BKP_DR0, 0x32f2);
 }
 
 /*
@@ -261,24 +293,24 @@ void HAL_RTC_MspInit(RTC_HandleTypeDef *hrtc) {
 
     RCC_OscInitStruct.OscillatorType =  RCC_OSCILLATORTYPE_LSI | RCC_OSCILLATORTYPE_LSE;
     RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
-    #if defined(MICROPY_HW_RTC_USE_LSE) && MICROPY_HW_RTC_USE_LSE
-    RCC_OscInitStruct.LSEState = RCC_LSE_ON;
-    RCC_OscInitStruct.LSIState = RCC_LSI_OFF;
-    #else
-    RCC_OscInitStruct.LSEState = RCC_LSE_OFF;
-    RCC_OscInitStruct.LSIState = RCC_LSI_ON;
-    #endif
+    if (rtc_use_lse) {
+        RCC_OscInitStruct.LSEState = RCC_LSE_ON;
+        RCC_OscInitStruct.LSIState = RCC_LSI_OFF;
+    } else {
+        RCC_OscInitStruct.LSEState = RCC_LSE_OFF;
+        RCC_OscInitStruct.LSIState = RCC_LSI_ON;
+    }
     if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
         //Error_Handler();
         return;
     }
 
     PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_RTC;
-    #if defined(MICROPY_HW_RTC_USE_LSE) && MICROPY_HW_RTC_USE_LSE
-    PeriphClkInitStruct.RTCClockSelection = RCC_RTCCLKSOURCE_LSE;
-    #else
-    PeriphClkInitStruct.RTCClockSelection = RCC_RTCCLKSOURCE_LSI;
-    #endif
+    if (rtc_use_lse) {
+        PeriphClkInitStruct.RTCClockSelection = RCC_RTCCLKSOURCE_LSE;
+    } else {
+        PeriphClkInitStruct.RTCClockSelection = RCC_RTCCLKSOURCE_LSI;
+    }
     if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK) {
         //Error_Handler();
         return;
@@ -483,7 +515,7 @@ mp_obj_t pyb_rtc_wakeup(mp_uint_t n_args, const mp_obj_t *args) {
         RTC->ISR &= ~(1 << 10);
         EXTI->PR = 1 << 22;
 
-        HAL_NVIC_SetPriority(RTC_WKUP_IRQn, 0x0f, 0x0f);
+        HAL_NVIC_SetPriority(RTC_WKUP_IRQn, IRQ_PRI_RTC_WKUP, IRQ_SUBPRI_RTC_WKUP);
         HAL_NVIC_EnableIRQ(RTC_WKUP_IRQn);
 
         //printf("wut=%d wucksel=%d\n", wut, wucksel);
@@ -509,34 +541,34 @@ MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(pyb_rtc_wakeup_obj, 2, 4, pyb_rtc_wakeup);
 mp_obj_t pyb_rtc_calibration(mp_uint_t n_args, const mp_obj_t *args) {
     mp_int_t cal;
     if (n_args == 2) {
-	cal = mp_obj_get_int(args[1]);
-	mp_uint_t cal_p, cal_m;
-	if (cal < -511 || cal > 512) {
-	    nlr_raise(mp_obj_new_exception_msg(&mp_type_ValueError,
-					       "calibration value out of range"));
-	}
-	if (cal > 0) {
-	    cal_p = RTC_SMOOTHCALIB_PLUSPULSES_SET;
-	    cal_m = 512 - cal;
-	} else {
-	    cal_p = RTC_SMOOTHCALIB_PLUSPULSES_RESET;
-	    cal_m = -cal;
-	}
-	HAL_RTCEx_SetSmoothCalib(&RTCHandle, RTC_SMOOTHCALIB_PERIOD_32SEC, cal_p, cal_m);
-	return mp_const_none;
+        cal = mp_obj_get_int(args[1]);
+        mp_uint_t cal_p, cal_m;
+        if (cal < -511 || cal > 512) {
+            nlr_raise(mp_obj_new_exception_msg(&mp_type_ValueError,
+                "calibration value out of range"));
+        }
+        if (cal > 0) {
+            cal_p = RTC_SMOOTHCALIB_PLUSPULSES_SET;
+            cal_m = 512 - cal;
+        } else {
+            cal_p = RTC_SMOOTHCALIB_PLUSPULSES_RESET;
+            cal_m = -cal;
+        }
+        HAL_RTCEx_SetSmoothCalib(&RTCHandle, RTC_SMOOTHCALIB_PERIOD_32SEC, cal_p, cal_m);
+        return mp_const_none;
     } else {
         // printf("CALR = 0x%x\n", (mp_uint_t) RTCHandle.Instance->CALR); // DEBUG
-	// Test if CALP bit is set in CALR:
-	if (RTCHandle.Instance->CALR & 0x8000) {
-	    cal = 512 - (RTCHandle.Instance->CALR & 0x1ff);
-	} else {
-	    cal = -(RTCHandle.Instance->CALR & 0x1ff);
-	}
-	return mp_obj_new_int(cal);
+        // Test if CALP bit is set in CALR:
+        if (RTCHandle.Instance->CALR & 0x8000) {
+            cal = 512 - (RTCHandle.Instance->CALR & 0x1ff);
+        } else {
+            cal = -(RTCHandle.Instance->CALR & 0x1ff);
+        }
+        return mp_obj_new_int(cal);
     }
 }
 MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(pyb_rtc_calibration_obj, 1, 2, pyb_rtc_calibration);
-    
+
 STATIC const mp_map_elem_t pyb_rtc_locals_dict_table[] = {
     { MP_OBJ_NEW_QSTR(MP_QSTR_info), (mp_obj_t)&pyb_rtc_info_obj },
     { MP_OBJ_NEW_QSTR(MP_QSTR_datetime), (mp_obj_t)&pyb_rtc_datetime_obj },

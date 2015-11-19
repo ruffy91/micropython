@@ -34,14 +34,15 @@
 #include "py/runtime.h"
 #include "py/stackctrl.h"
 #include "py/gc.h"
+#include "py/mphal.h"
 
+#include "lib/utils/pyexec.h"
 #include "lib/fatfs/ff.h"
 
 #include "systick.h"
 #include "pendsv.h"
 #include "gccollect.h"
 #include "readline.h"
-#include "pyexec.h"
 #include "i2c.h"
 #include "spi.h"
 #include "uart.h"
@@ -60,7 +61,6 @@
 #include "dac.h"
 #include "can.h"
 #include "modnetwork.h"
-#include MICROPY_HAL_H
 
 void SystemClock_Config(void);
 
@@ -135,6 +135,7 @@ static const char fresh_boot_py[] =
 "# boot.py -- run on boot-up\r\n"
 "# can run arbitrary Python, but best to keep it minimal\r\n"
 "\r\n"
+"import machine\r\n"
 "import pyb\r\n"
 "#pyb.main('main.py') # main script to run after this one\r\n"
 "#pyb.usb_mode('CDC+MSC') # act as a serial and a storage device\r\n"

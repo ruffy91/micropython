@@ -81,6 +81,11 @@ void STM32F7DISC_board_early_init(void);
 #define MICROPY_HW_LED_ON(pin)      (pin->gpio->BSRR = pin->pin_mask)
 #define MICROPY_HW_LED_OFF(pin)     (pin->gpio->BSRR = (pin->pin_mask << 16))
 
+// SD card detect switch
+#define MICROPY_HW_SDCARD_DETECT_PIN        (pin_C13)
+#define MICROPY_HW_SDCARD_DETECT_PULL       (GPIO_PULLUP)
+#define MICROPY_HW_SDCARD_DETECT_PRESENT    (GPIO_PIN_RESET)
+
 // USB config (CN13 - USB OTG FS)
 // The Hardware VBUS detect only works on pin PA9. The STM32F7 Discovery uses
 // PA9 for VCP_TX functionality and connects the VBUS to pin J12 (so software
