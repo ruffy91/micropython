@@ -263,8 +263,6 @@ bool sdcard_write_blocks_dma(const uint8_t *src, uint32_t block_num, uint32_t nu
 }
 #endif
 
-#endif
-
 /******************************************************************************/
 // Micro Python bindings
 //
