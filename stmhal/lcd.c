@@ -742,6 +742,27 @@ STATIC mp_obj_t pyb_lcd_pixel(mp_uint_t n_args, const mp_obj_t *args) {
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(pyb_lcd_pixel_obj, 4, 4, pyb_lcd_pixel);
 
+/// \method pixel(x, y, colour)
+///
+/// Set the pixel at `(x, y)` to the given colour (0 or 1).
+///
+/// This method writes to the hidden buffer.  Use `show()` to show the buffer.
+STATIC mp_obj_t pyb_lcd_pixel(mp_uint_t n_args, const mp_obj_t *args) {
+    int x = mp_obj_get_int(args[1]);
+    int y = mp_obj_get_int(args[2]);
+    int pixel;
+    if (mp_obj_get_int(args[3])==0){
+      pixel = LCD_COLOR_BLACK;
+    }
+    else{
+      pixel = LCD_COLOR_WHITE;
+    }
+
+    BSP_LCD_DrawPixel(x,y,pixel);
+    return mp_const_none;
+}
+STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(pyb_lcd_pixel_obj, 4, 4, pyb_lcd_pixel);
+
 /// \method text(str, x, y, colour)
 ///
 /// Draw the given text to the position `(x, y)` using the given colour (0 or 1).
