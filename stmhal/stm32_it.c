@@ -77,6 +77,7 @@
 #include "uart.h"
 #include "storage.h"
 #include "can.h"
+#include "dma.h"
 
 extern void __fatal_error(const char*);
 extern PCD_HandleTypeDef pcd_handle;
@@ -260,13 +261,29 @@ void SysTick_Handler(void) {
     // Instead of calling HAL_IncTick we do the increment here of the counter.
     // This is purely for efficiency, since SysTick is called 1000 times per
     // second at the highest interrupt priority.
-    extern __IO uint32_t uwTick;
+    // Note: we don't need uwTick to be declared volatile here because this is
+    // the only place where it can be modified, and the code is more efficient
+    // without the volatile specifier.
+    extern uint32_t uwTick;
     uwTick += 1;
 
     // Read the systick control regster. This has the side effect of clearing
     // the COUNTFLAG bit, which makes the logic in sys_tick_get_microseconds
     // work properly.
     SysTick->CTRL;
+
+    // Right now we have the storage and DMA controllers to process during
+    // this interrupt and we use custom dispatch handlers.  If this needs to
+    // be generalised in the future then a dispatch table can be used as
+    // follows: ((void(*)(void))(systick_dispatch[uwTick & 0xf]))();
+
+    if (STORAGE_IDLE_TICK(uwTick)) {
+        NVIC->STIR = FLASH_IRQn;
+    }
+
+    if (DMA_IDLE_ENABLED() && DMA_IDLE_TICK(uwTick)) {
+        dma_idle_handler(uwTick);
+    }
 }
 
 /******************************************************************************/
@@ -284,7 +301,7 @@ void SysTick_Handler(void) {
 #if defined(USE_USB_FS)
 #define OTG_XX_IRQHandler      OTG_FS_IRQHandler
 #define OTG_XX_WKUP_IRQHandler OTG_FS_WKUP_IRQHandler
-#elif defined(USE_USB_HS)
+#elif defined(USE_USB_HS) || defined(USE_USB_HS_IN_FS)
 #define OTG_XX_IRQHandler      OTG_HS_IRQHandler
 #define OTG_XX_WKUP_IRQHandler OTG_HS_WKUP_IRQHandler
 #endif
@@ -335,7 +352,7 @@ void OTG_XX_WKUP_IRQHandler(void) {
 #ifdef USE_USB_FS
   /* Clear EXTI pending Bit*/
   __HAL_USB_FS_EXTI_CLEAR_FLAG();
-#elif defined(USE_USB_HS)
+#elif defined(USE_USB_HS) || defined(USE_USB_HS_IN_FS)
     /* Clear EXTI pending Bit*/
   __HAL_USB_HS_EXTI_CLEAR_FLAG();
 #endif
