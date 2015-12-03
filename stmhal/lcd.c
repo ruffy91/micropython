@@ -769,7 +769,24 @@ STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(pyb_lcd_pixel_obj, 4, 4, pyb_lcd_pixe
 ///
 /// This method writes to the hidden buffer.  Use `show()` to show the buffer.
 STATIC mp_obj_t pyb_lcd_text(mp_uint_t n_args, const mp_obj_t *args) {
-  return mp_const_none;
+    mp_uint_t len;
+    const char *str = mp_obj_str_get_data(args[1], &len);
+    int x = mp_obj_get_int(args[2]);
+    int y = mp_obj_get_int(args[3]);
+    int color;
+    uint8_t str_buffer[len+1];
+    if (mp_obj_get_int(args[4])==0){
+      color = LCD_COLOR_BLACK;
+    }
+    else{
+      color = LCD_COLOR_WHITE;
+    }
+    memcpy(str_buffer, str, len ); // no sizeof, since sizeof(char)=1
+    str_buffer[len] = '\0';
+
+    BSP_LCD_SetTextColor(color);
+    BSP_LCD_DisplayStringAt(x,y,str_buffer,LEFT_MODE);
+    return mp_const_none;
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(pyb_lcd_text_obj, 5, 5, pyb_lcd_text);
 
