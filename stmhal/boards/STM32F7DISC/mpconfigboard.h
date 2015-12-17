@@ -18,18 +18,13 @@
 #define MICROPY_HW_ENABLE_SPI3      (0)
 #define MICROPY_HW_ENABLE_CAN       (1)
 
+
 #define MICROPY_HW_HAS_TFT          (1)
 
 #define MICROPY_BOARD_EARLY_INIT    STM32F7DISC_board_early_init
 void STM32F7DISC_board_early_init(void);
 
-// // HSE is 8MHz
-// #define MICROPY_HW_CLK_PLLM (25)
-// #define MICROPY_HW_CLK_PLLN (400)
-// #define MICROPY_HW_CLK_PLLP (RCC_PLLP_DIV2)
-// #define MICROPY_HW_CLK_PLLQ (8)
-
-// HSE is 25MHz
+// HSE is 8MHz
 #define MICROPY_HW_CLK_PLLM (25)
 #define MICROPY_HW_CLK_PLLN (336)
 #define MICROPY_HW_CLK_PLLP (RCC_PLLP_DIV2)
@@ -64,11 +59,7 @@ void STM32F7DISC_board_early_init(void);
 //
 // The value 0x40912732 was obtained from the DISCOVERY_I2Cx_TIMING constant
 // defined in the STM32F7Cube file Drivers/BSP/STM32F746G-Discovery/stm32f7456g_discovery.h
-
-// Wrong
-//#define MICROPY_HW_I2C_BAUDRATE_TIMING  {{100000, 0x40912732}}
-#define MICROPY_HW_I2C_BAUDRATE_TIMING  {{100000, 0x00E0A3F2}}
-
+#define MICROPY_HW_I2C_BAUDRATE_TIMING  {{100000, 0x40912732}, {400000, 0x00801545}}
 #define MICROPY_HW_I2C_BAUDRATE_DEFAULT 100000
 #define MICROPY_HW_I2C_BAUDRATE_MAX     100000
 
